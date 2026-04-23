@@ -1,0 +1,19 @@
+{
+  "cpus": [
+    {"name": "Intel Core i3-12100F", "price": 100, "performance": 1.0},
+    {"name": "AMD Ryzen 5 5600", "price": 130, "performance": 1.6},
+    {"name": "Intel Core i5-12400F", "price": 145, "performance": 1.7},
+    {"name": "AMD Ryzen 7 5700X3D", "price": 250, "performance": 2.2},
+    {"name": "Intel Core i7-13700K", "price": 370, "performance": 2.8},
+    {"name": "AMD Ryzen 7 7800X3D", "price": 450, "performance": 3.2}
+  ],
+  "gpus": [
+    {"name": "NVIDIA RTX 3050", "price": 180, "performance": 0.9},
+    {"name": "AMD Radeon RX 6600", "price": 220, "performance": 1.3},
+    {"name": "NVIDIA RTX 3060", "price": 260, "performance": 1.4},
+    {"name": "AMD Radeon RX 6700 XT", "price": 330, "performance": 1.9},
+    {"name": "NVIDIA RTX 4060 Ti", "price": 390, "performance": 2.0},
+    {"name": "NVIDIA RTX 4070", "price": 550, "performance": 2.5},
+    {"name": "AMD Radeon RX 7800 XT", "price": 500, "performance": 2.6}
+  ]
+}
