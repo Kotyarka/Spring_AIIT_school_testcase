@@ -267,20 +267,19 @@ class PCAgent:
 
     def normalize(self, parsed: dict) -> dict:
         data = load_data()
-
+        
         game = parsed.get("game")
         target = parsed.get("target_performance")
-
+        
         if target is None and game:
-            target = None
             for g in data.get("games", []):
                 if g["name"].lower() == game.lower():
                     target = g["required_performance"]
                     break
-
+        
         return {
-            "budget": parsed.get("budget") or 800,
-            "performance": target or 2.0, 
+            "budget": parsed.get("budget"),  
+            "performance": target,  
             "game": game,
             "is_game_based": game is not None
         }
