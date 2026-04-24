@@ -8,14 +8,11 @@ from gigachat.models import Chat, Messages, MessagesRole, Function, FunctionPara
 load_dotenv()
 
 def load_data() -> Dict:
-    """Загружает базу комплектующих из JSON"""
     with open("data/components.json", "r", encoding="utf-8") as f:
         return json.load(f)
 
 def find_cpu_by_performance_and_price(target_performance: float, max_price: float) -> Dict[str, Any]:
-    """
-    Находит процессор, соответствующий целевой производительности и бюджету.
-    """
+
     data = load_data()
     cpus = data["cpus"]
     
@@ -34,9 +31,6 @@ def find_cpu_by_performance_and_price(target_performance: float, max_price: floa
     }
 
 def find_gpu_by_performance_and_price(target_performance: float, max_price: float) -> Dict[str, Any]:
-    """
-    Находит видеокарту, соответствующую целевой производительности и бюджету.
-    """
     data = load_data()
     gpus = data["gpus"]
     
@@ -132,22 +126,20 @@ class PCAssistantAgent:
         ]
     
     def _execute_function_call(self, function_call) -> str:
-        """Выполняет функцию, которую запросила модель"""
         function_name = function_call.name
         function_args = json.loads(function_call.arguments)
         
-        print(f"\n🔧 Вызов функции: {function_name}")
-        print(f"📥 Аргументы: {function_args}")
+        print(f"\n Вызов функции: {function_name}")
+        print(f" Аргументы: {function_args}")
         
         if function_name in AVAILABLE_FUNCTIONS:
             result = AVAILABLE_FUNCTIONS[function_name](**function_args)
-            print(f"📤 Результат: {json.dumps(result, ensure_ascii=False, indent=2)}")
+            print(f" Результат: {json.dumps(result, ensure_ascii=False, indent=2)}")
             return json.dumps(result, ensure_ascii=False)
         else:
             return json.dumps({"error": f"Неизвестная функция: {function_name}"})
     
     def _send_request(self, user_message: str, has_functions: bool = True) -> Any:
-        """Отправляет запрос к GigaChat"""
         self.history.append(Messages(role=MessagesRole.USER, content=user_message))
         
         chat = Chat(
@@ -158,10 +150,7 @@ class PCAssistantAgent:
         return self.client.chat(chat)
     
     def _process_function_calls(self, response) -> str:
-        """
-        Обрабатывает цепочку function calls.
-        GigaChat может запросить несколько функций подряд.
-        """
+
         choice = response.choices[0]
         message = choice.message
         
@@ -189,10 +178,7 @@ class PCAssistantAgent:
         return "Не удалось обработать ответ модели"
     
     def ask(self, user_message: str) -> str:
-        """
-        Основной метод для взаимодействия с агентом.
-        """
-        print(f"\n💬 Пользователь: {user_message}")
+        print(f"\nПользователь: {user_message}")
         
         response = self._send_request(user_message)
         answer = self._process_function_calls(response)
@@ -202,42 +188,41 @@ class PCAssistantAgent:
         return answer
     
     def clear_history(self):
-        """Очищает историю диалога, оставляя только системный промпт"""
         self.history = [Messages(role=MessagesRole.SYSTEM, content=SYSTEM_PROMPT)]
 
 
 def main():
     print("=" * 60)
-    print("🖥️  GigaChat PC Builder Assistant (без LangChain)")
+    print(" Консультант Глеб Павлович Терентьев ")
     print("=" * 60)
     print("Я помогу подобрать процессор и видеокарту под твой бюджет и требования.")
     print("Напиши, например: 'подбери комплектующие с производительностью 3 и бюджетом 800 долларов'")
     print("Для выхода напиши 'выход' или 'quit'")
     print("-" * 60)
     
-    credentials = "воровать ключи нехорошо!" 
+    credentials=os.getenv("GIGACHAT_CREDENTIALS")
     if not credentials:
-        print("❌ Ошибка: не найден GIGACHAT_CREDENTIALS в .env файле")
+        print(" Ошибка: не найден GIGACHAT_CREDENTIALS в .env файле")
         return
     
     agent = PCAssistantAgent(credentials)
     
     while True:
-        user_input = input("\n💬 Ты: ").strip()
+        user_input = input("\nТы: ").strip()
         
         if user_input.lower() in ['выход', 'quit', 'exit']:
-            print("👋 До свидания! Удачной сборки!")
+            print("До свидания! Удачной сборки!")
             break
         
         if not user_input:
             continue
         
-        print("\n🤔 Думаю...")
+        print("\n Думаю...")
         try:
             response = agent.ask(user_input)
-            print(f"\n🎮 Ассистент: {response}")
+            print(f"\nАссистент: {response}")
         except Exception as e:
-            print(f"\n❌ Ошибка: {e}")
+            print(f"\nОшибка: {e}")
 
 if __name__ == "__main__":
     main()
