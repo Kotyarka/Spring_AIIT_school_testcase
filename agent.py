@@ -34,58 +34,120 @@ def get_game_performance(game_name: str, data: Dict) -> float | None:
 
     return None
 
-def build_pc(target_performance: float, budget: float, is_game_based: bool = False):
+def build_pc(target_performance: float = None, budget: float = None, is_game_based: bool = False):
     data = load_data()
 
     cpus = data["cpus"]
     gpus = data["gpus"]
 
     best_combo = None
-    best_score = -1
 
-    for cpu in cpus:
-        for gpu in gpus:
-
-            total_price = cpu["price"] + gpu["price"]
-            if total_price > budget:
-                continue
-
-            performance = (cpu["performance"]) + (gpu["performance"])
-
-            perf_score = 1 / (abs(performance - target_performance) + 0.01)
-
-            budget_score = 1 - (total_price / budget)
-
-            score = (perf_score * 0.7) + (budget_score * 0.3)
-
-            if score > best_score:
-                best_score = score
-                best_combo = (cpu, gpu, total_price, performance)
-
-    if not best_combo:
-        cpu = min(cpus, key=lambda x: x["price"])
-        gpu = min(gpus, key=lambda x: x["price"])
-
-        return {
-            "cpu": cpu,
-            "gpu": gpu,
-            "total_price": cpu["price"] + gpu["price"],
-            "performance": (cpu["performance"] + gpu["performance"]),
-            "budget": budget,
-            "warning": "Бюджет слишком низкий для оптимальной сборки"
-        }
+    #  указана только стоимость - ищем максимальную производительность
+    if budget is not None and target_performance is None:
+        best_performance = -1
+        
+        for cpu in cpus:
+            for gpu in gpus:
+                total_price = cpu["price"] + gpu["price"]
+                if total_price > budget:
+                    continue
+                
+                performance = cpu["performance"] + gpu["performance"]
+                
+                if performance > best_performance:
+                    best_performance = performance
+                    best_combo = (cpu, gpu, total_price, performance)
+        
+        if not best_combo:
+            cpu = min(cpus, key=lambda x: x["price"])
+            gpu = min(gpus, key=lambda x: x["price"])
+            return {
+                "cpu": cpu,
+                "gpu": gpu,
+                "total_price": cpu["price"] + gpu["price"],
+                "performance": cpu["performance"] + gpu["performance"],
+                "budget": budget,
+                "warning": "Бюджет слишком низкий для сборки"
+            }
+    
+        #   указана только производительность - ищем минимальную стоимость
+    elif target_performance is not None and budget is None:
+        best_price = float('inf')
+        
+        for cpu in cpus:
+            for gpu in gpus:
+                total_price = cpu["price"] + gpu["price"]
+                performance = cpu["performance"] + gpu["performance"]
+                
+                if performance >= target_performance and total_price < best_price:
+                    best_price = total_price
+                    best_combo = (cpu, gpu, total_price, performance)
+        
+        if not best_combo:
+            cpu = max(cpus, key=lambda x: x["performance"])
+            gpu = max(gpus, key=lambda x: x["performance"])
+            return {
+                "cpu": cpu,
+                "gpu": gpu,
+                "total_price": cpu["price"] + gpu["price"],
+                "performance": cpu["performance"] + gpu["performance"],
+                "target_performance": target_performance,
+                "warning": "Невозможно достичь заданной производительности"
+            }
+    
+      #   указаны оба параметра - ищем оптимальный баланс
+    elif target_performance is not None and budget is not None:
+        best_score = -1
+        
+        for cpu in cpus:
+            for gpu in gpus:
+                total_price = cpu["price"] + gpu["price"]
+                if total_price > budget:
+                    continue
+                
+                performance = cpu["performance"] + gpu["performance"]
+                
+                perf_score = 1 / (abs(performance - target_performance) + 0.01)
+                budget_score = 1 - (total_price / budget)
+                score = (perf_score * 0.7) + (budget_score * 0.3)
+                
+                if score > best_score:
+                    best_score = score
+                    best_combo = (cpu, gpu, total_price, performance)
+        
+        if not best_combo:
+            cpu = min(cpus, key=lambda x: x["price"])
+            gpu = min(gpus, key=lambda x: x["price"])
+            return {
+                "cpu": cpu,
+                "gpu": gpu,
+                "total_price": cpu["price"] + gpu["price"],
+                "performance": cpu["performance"] + gpu["performance"],
+                "budget": budget,
+                "warning": "Бюджет слишком низкий для оптимальной сборки"
+            }
+    
+    else:
+        raise ValueError("Укажите хотя бы один параметр: budget или target_performance")
 
     cpu, gpu, total_price, performance = best_combo
 
-    return {
+    result = {
         "cpu": cpu,
         "gpu": gpu,
-        "total_price": total_price,
+        "total_price": round(total_price, 2),
         "performance": round(performance, 2),
-        "budget": budget,
-        "game_mode": is_game_based,
-        "budget_used_percent": round((total_price / budget) * 100, 1)
+        "game_mode": is_game_based
     }
+    
+    if budget is not None:
+        result["budget"] = budget
+        result["budget_used_percent"] = round((total_price / budget) * 100, 1)
+    
+    if target_performance is not None:
+        result["target_performance"] = target_performance
+    
+    return result
 
 AVAILABLE_FUNCTIONS = {
     "build_pc": build_pc,
