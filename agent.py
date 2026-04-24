@@ -1,17 +1,9 @@
 import json
 import os
-import re
 from typing import Dict, Any
 from dotenv import load_dotenv
-
 from gigachat import GigaChat
-from gigachat.models import (
-    Chat,
-    Messages,
-    MessagesRole,
-    Function,
-    FunctionParameters,
-)
+from gigachat.models import Chat, Messages, MessagesRole, Function, FunctionParameters
 
 load_dotenv()
 
@@ -21,64 +13,79 @@ def load_data() -> Dict:
         return json.load(f)
 
 
-def is_pc_request(text: str) -> bool:
-    keywords = [
-        "пк", "pc", "комп", "сборк", "процессор",
-        "видеокарт", "игров", "собрать"
-    ]
-    return any(k in text.lower() for k in keywords)
+def get_game_performance(game_name: str, data: Dict) -> float | None:
+    if not game_name:
+        return None
 
+    for g in data.get("games", []):
+        if g["name"].lower() == game_name.lower():
+            return g["required_performance"]
 
-def extract_params(text: str):
-    budget = None
-    perf = None
+    return None
+# ===================== функции =====================
 
-    m = re.search(r"(\d+)\s*\$|\$(\d+)|(\d+)\s*дол", text)
-    if m:
-        budget = int(next(g for g in m.groups() if g))
+def get_game_performance(game_name: str, data: Dict) -> float | None:
+    if not game_name:
+        return None
 
-    m = re.search(r"коэф.*?(\d+(\.\d+)?)", text)
-    if m:
-        perf = float(m.group(1))
+    for g in data.get("games", []):
+        if g["name"].lower() == game_name.lower():
+            return g["required_performance"]
 
-    return budget, perf
+    return None
 
-
-def normalize(text: str):
-    budget, perf = extract_params(text.lower())
-
-    if budget is None:
-        budget = 800
-
-    if perf is None:
-        perf = 3.0 if "игров" in text.lower() else 2.0
-
-    return budget, perf
-
-
-def build_pc(target_performance: float, budget: float) -> Dict[str, Any]:
+def build_pc(target_performance: float, budget: float, is_game_based: bool = False):
     data = load_data()
 
-    cpus = [c for c in data["cpus"] if c["price"] <= budget * 0.4]
-    gpus = [g for g in data["gpus"] if g["price"] <= budget * 0.6]
+    cpus = data["cpus"]
+    gpus = data["gpus"]
 
-    if not cpus or not gpus:
+    best_combo = None
+    best_score = -1
+
+    for cpu in cpus:
+        for gpu in gpus:
+
+            total_price = cpu["price"] + gpu["price"]
+            if total_price > budget:
+                continue
+
+            performance = (cpu["performance"]) + (gpu["performance"])
+
+            perf_score = 1 / (abs(performance - target_performance) + 0.01)
+
+            budget_score = 1 - (total_price / budget)
+
+            score = (perf_score * 0.7) + (budget_score * 0.3)
+
+            if score > best_score:
+                best_score = score
+                best_combo = (cpu, gpu, total_price, performance)
+
+    if not best_combo:
+        cpu = min(cpus, key=lambda x: x["price"])
+        gpu = min(gpus, key=lambda x: x["price"])
+
         return {
-            "error": "Нет подходящих комплектующих",
-            "available": False
+            "cpu": cpu,
+            "gpu": gpu,
+            "total_price": cpu["price"] + gpu["price"],
+            "performance": (cpu["performance"] + gpu["performance"]),
+            "budget": budget,
+            "warning": "Бюджет слишком низкий для оптимальной сборки"
         }
 
-    cpu = min(cpus, key=lambda x: abs(x["performance"] - target_performance))
-    gpu = min(gpus, key=lambda x: abs(x["performance"] - target_performance * 1.2))
+    cpu, gpu, total_price, performance = best_combo
 
     return {
         "cpu": cpu,
         "gpu": gpu,
-        "total_price": cpu["price"] + gpu["price"],
-        "performance": round((cpu["performance"] + gpu["performance"]), 2),
-        "budget": budget
+        "total_price": total_price,
+        "performance": round(performance, 2),
+        "budget": budget,
+        "game_mode": is_game_based,
+        "budget_used_percent": round((total_price / budget) * 100, 1)
     }
-
 
 AVAILABLE_FUNCTIONS = {
     "build_pc": build_pc,
@@ -88,12 +95,13 @@ AVAILABLE_FUNCTIONS = {
 functions_description = [
     Function(
         name="build_pc",
-        description="Собирает ПК (CPU + GPU) по бюджету и производительности",
+        description="Собирает ПК по бюджету и требуемой производительности",
         parameters=FunctionParameters(
             type="object",
             properties={
                 "target_performance": {"type": "number"},
                 "budget": {"type": "number"},
+                "is_game_based": {"type": "boolean"},
             },
             required=["target_performance", "budget"],
         ),
@@ -101,22 +109,61 @@ functions_description = [
 ]
 
 
+# ===================== Промпты =====================
+### Промпт сборки компа
 SYSTEM_PROMPT = """
 Ты консультант по сборке ПК.
 
-ВАЖНО:
-- Отвечай ТОЛЬКО если запрос про ПК.
-- Используй только результат функции build_pc.
-- Никогда не выдумывай комплектующие.
-- Не задавай вопросы пользователю.
+Тебе дают результат сборки компьютера в JSON.
 
-ФОРМАТ:
-CPU
-GPU
-Цена
-Производительность
+ВСЕГДА ВЫЗЫВАЙ ФУНКЦИЮ СБОРКИ!!! НЕ БЕРИ ДАННЫЕ ИЗ ГОЛОВЫ!!!
+
+Твоя задача:
+- красиво объяснить сборку
+- вывести:
+
+CPU: {name}
+GPU: {name}
+Общая цена: {price}
+Производительность: {performance} в коэффициенте производительности
+
+Говори кратко и понятно.
 """
+### Промпт парсера данных
+PARSER_PROMPT = """
+Ты — парсер запросов о ПК.
 
+Определи параметры из текста пользователя.
+
+Верни ТОЛЬКО JSON:
+
+{
+  "budget": number | null,
+  "target_performance": number | null,
+  "game": string | null,
+  "is_pc_request": boolean
+}
+
+Если данных нет → null
+"""
+### Промпт балабола о технике
+TECH_PROMPT = """
+Ты технический ассистент.
+
+Отвечай ТОЛЬКО на темы:
+- компьютеры
+- железо (CPU, GPU, RAM, SSD)
+- ноутбуки
+- смартфоны
+- периферия
+- софт и технологии
+
+Если вопрос не про технику — скажи:
+"Я отвечаю только на вопросы о технике."
+
+Отвечай кратко и по делу.
+"""
+# ===================== Агент =====================
 
 class PCAgent:
     def __init__(self, credentials: str):
@@ -125,100 +172,121 @@ class PCAgent:
             model="GigaChat-Pro",
             verify_ssl_certs=False,
             scope="GIGACHAT_API_PERS",
-            temperature=0.3,
-            max_tokens=1500,
+            temperature=0
         )
 
         self.history = [
             Messages(role=MessagesRole.SYSTEM, content=SYSTEM_PROMPT)
         ]
 
-    def _run_function(self, function_call):
+    def parse_user_intent(self, text: str) -> Dict[str, Any]:
+        response = self.client.chat(Chat(
+            messages=[
+                Messages(role=MessagesRole.SYSTEM, content=PARSER_PROMPT),
+                Messages(role=MessagesRole.USER, content=text)
+            ],
+            temperature=0
+        ))
+
+        try:
+            return json.loads(response.choices[0].message.content)
+        except:
+            return {
+                "budget": None,
+                "target_performance": None,
+                "game": None,
+                "is_pc_request": False
+            }
+
+    def _run_function(self, function_call, params):
         name = function_call.name
-
-        args = (
-            json.loads(function_call.arguments)
-            if isinstance(function_call.arguments, str)
-            else function_call.arguments
-        )
-
-        print(f"\n[FUNCTION] {name} {args}")
-
-        result = AVAILABLE_FUNCTIONS[name](**args)
-
-        print(f"[RESULT] {result}\n")
-
+        result = AVAILABLE_FUNCTIONS[name](**params)
         return result
 
+    def normalize(self, parsed: dict) -> dict:
+        data = load_data()
+
+        game = parsed.get("game")
+        target = parsed.get("target_performance")
+
+        if target is None and game:
+            target = None
+            for g in data.get("games", []):
+                if g["name"].lower() == game.lower():
+                    target = g["required_performance"]
+                    break
+
+        return {
+            "budget": parsed.get("budget") or 800,
+            "performance": target or 2.0, 
+            "game": game,
+            "is_game_based": game is not None
+        }
+
+    # -------- main --------
     def ask(self, text: str):
 
-        if not is_pc_request(text):
-            return "Я занимаюсь только подбором комплектующих для ПК."
+        parsed = self.parse_user_intent(text)
 
-        budget, perf = normalize(text)
+        # ---- Сборка пк ----
+        if parsed.get("is_pc_request"):
+            params = self.normalize(parsed)
 
-        enriched = f"""
-Запрос: {text}
-
-budget={budget}
-performance={perf}
-"""
-
-        self.history.append(
-            Messages(role=MessagesRole.USER, content=enriched)
-        )
-
-        chat = Chat(
-            messages=self.history,
-            functions=functions_description,
-        )
-
-        response = self.client.chat(chat)
-        choice = response.choices[0]
-        message = choice.message
-
-        if choice.finish_reason == "function_call" and message.function_call:
-
-            result = self._run_function(message.function_call)
-
-            self.history.append(
-                Messages(
-                    role=MessagesRole.ASSISTANT,
-                    content="",
-                    function_call=message.function_call,
-                )
+            chat = Chat(
+                messages=[
+                    Messages(role=MessagesRole.SYSTEM, content=SYSTEM_PROMPT),
+                    Messages(role=MessagesRole.USER, content=json.dumps(params))
+                ],
+                functions=functions_description
             )
 
-            # function result
-            self.history.append(
-                Messages(
-                    role=MessagesRole.FUNCTION,
-                    name=message.function_call.name,
-                    content=json.dumps(result, ensure_ascii=False),
+            response = self.client.chat(chat)
+            choice = response.choices[0]
+            message = choice.message
+
+            if choice.finish_reason == "function_call":
+                result = self._run_function(
+                    message.function_call,
+                    {
+                        "target_performance": params["performance"],
+                        "budget": params["budget"],
+                        "is_game_based": params["is_game_based"]
+                    }
                 )
-            )
 
-            # final answer
-            final = self.client.chat(Chat(messages=self.history))
-            answer = final.choices[0].message.content
+                final = self.client.chat(Chat(
+                    messages=[
+                        Messages(role=MessagesRole.SYSTEM, content=SYSTEM_PROMPT),
+                        Messages(
+                            role=MessagesRole.USER,
+                            content=json.dumps(result, ensure_ascii=False)
+                        )
+                    ]
+                ))
 
-        else:
-            answer = message.content
+                return final.choices[0].message.content
 
-        self.history.append(
-            Messages(role=MessagesRole.ASSISTANT, content=answer)
-        )
+            return message.content
 
-        return answer
+        # ---- Балабольство ----
+        tech_response = self.client.chat(Chat(
+            messages=[
+                Messages(role=MessagesRole.SYSTEM, content=TECH_PROMPT),
+                Messages(role=MessagesRole.USER, content=text)
+            ],
+            temperature=0.3
+        ))
 
+        return tech_response.choices[0].message.content
+
+# ===================== MAIN =====================
 
 def main():
     print("=" * 60)
-    print(" Консультат Глеб Павлович Терентьев ")
+    print(" Консультант Глеб Павлович Терентьев ")
     print("=" * 60)
 
     credentials = os.getenv("GIGACHAT_CREDENTIALS")
-
     if not credentials:
         print("Нет GIGACHAT_CREDENTIALS")
         return
@@ -231,10 +299,9 @@ def main():
         if text.lower() in ["exit", "quit", "выход"]:
             break
 
-        print("\n... думаю ...")
-
+        print("\nГ.П.Терентьев думает...\n")
         try:
-            print("\nАссистент:\n", agent.ask(text))
+            print(agent.ask(text))
         except Exception as e:
             print("Ошибка:", e)
 
