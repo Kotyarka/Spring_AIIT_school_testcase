@@ -1,2 +1,5 @@
-# Spring_AIIT_school_testcase
-Тестовое задание для отбора на ex-матмод, проходящий в моем любимом вузе
+Track: A
+launch: 1) write you auth key of gigachat in .env file
+        2) execute agent.py
+
+  
