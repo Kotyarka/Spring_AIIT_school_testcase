@@ -234,7 +234,6 @@ class PCAgent:
             model="GigaChat-Pro",
             verify_ssl_certs=False,
             scope="GIGACHAT_API_PERS",
-            temperature=0
         )
 
         self.history = [
