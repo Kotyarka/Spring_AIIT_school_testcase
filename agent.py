@@ -12,16 +12,6 @@ def load_data() -> Dict:
     with open("data/components.json", "r", encoding="utf-8") as f:
         return json.load(f)
 
-
-def get_game_performance(game_name: str, data: Dict) -> float | None:
-    if not game_name:
-        return None
-
-    for g in data.get("games", []):
-        if g["name"].lower() == game_name.lower():
-            return g["required_performance"]
-
-    return None
 # ===================== функции =====================
 
 def get_game_performance(game_name: str, data: Dict) -> float | None:
